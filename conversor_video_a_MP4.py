@@ -571,44 +571,77 @@ def ensure_dependencies():
     if ok:
         print(f"   ffmpeg detectado: {ver}")
     else:
-        print("   ffmpeg no encontrado. Descargándolo automáticamente...")
-        try:
-            # For Windows, attempt to download and install
-            import urllib.request
-            import tempfile
-            import zipfile
-            # Download essentials build
-            url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-            print("   Descargando ffmpeg...")
-            with tempfile.TemporaryDirectory() as temp_dir:
-                zip_path = os.path.join(temp_dir, "ffmpeg.zip")
-                urllib.request.urlretrieve(url, zip_path)
-                print("   Extrayendo...")
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(temp_dir)
-                # Find ffmpeg.exe and move to a global location, say beside python
-                python_dir = os.path.dirname(sys.executable)
-                for root, dirs, files in os.walk(temp_dir):
-                    for file in files:
-                        if file.startswith("ffmpeg") and file.endswith(".exe"):
-                            dest = os.path.join(python_dir, file)
-                            if not os.path.exists(dest):
-                                shutil.move(os.path.join(root, file), dest)
-                                print(f"   Instalado: {dest}")
-                            break
-                    break
-            # Update global
-            FFMPEG_PATH = shutil.which("ffmpeg") or os.path.join(python_dir, "ffmpeg.exe")
-            FFPROBE_PATH = shutil.which("ffprobe") or os.path.join(python_dir, "ffprobe.exe")
+        if os.name == 'nt':  # Windows
+            print("   ffmpeg no encontrado. Instalándolo automáticamente con Chocolatey...")
+            try:
+                if not shutil.which("choco"):
+                    print("   Instalando Chocolatey...")
+                    subprocess.check_call([
+                        "powershell", "-Command",
+                        "Set-ExecutionPolicy Bypass -Scope Process -Force; iwr https://community.chocolatey.org/install.ps1 -UseBasicParsing | iex"
+                    ], shell=True)
+                    print("   Chocolatey instalado.")
+                print("   Instalando ffmpeg...")
+                subprocess.check_call(["powershell", "-Command", "choco install ffmpeg -y"], shell=True)
+                print("   ffmpeg instalado.")
+                FFMPEG_PATH = shutil.which("ffmpeg")
+                FFPROBE_PATH = shutil.which("ffprobe")
+            except subprocess.CalledProcessError as e:
+                print(f"   Error instalando automáticamente: {e}")
+                print("   Inténtalo manualmente abriendo PowerShell como administrador y ejecutando:")
+                print("   1. Set-ExecutionPolicy Bypass -Scope Process -Force")
+                print("   2. iwr https://community.chocolatey.org/install.ps1 -UseBasicParsing | iex")
+                print("   3. choco install ffmpeg -y")
+                print("   Luego vuelve a ejecutar este programa.")
+                sys.exit(1)
+            # Verificar
             ok, ver = check_ffmpeg()
-            if ok:
-                print(f"   ffmpeg instalado correctamente: {ver}")
-            else:
-                raise Exception("Instalación falló")
-        except Exception as e:
-            print(f"   Error instalando ffmpeg: {e}")
-            print("   Por favor instala ffmpeg manualmente.")
-            sys.exit(1)
+            if not ok:
+                print("   Error: ffmpeg aún no disponible. Asegúrate de que esté en PATH.")
+                sys.exit(1)
+        else:
+            print("   ffmpeg no encontrado. Descargándolo automáticamente...")
+            try:
+                # For other OS (fallback)
+                import urllib.request
+                import tempfile
+                import zipfile
+                # Download essentials build (assuming Linux or similar)
+                url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+                print("   Descargando ffmpeg...")
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    zip_path = os.path.join(temp_dir, "ffmpeg.zip")
+                    urllib.request.urlretrieve(url, zip_path)
+                    print("   Extrayendo...")
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        zip_ref.extractall(temp_dir)
+                    # Find ffmpeg and move to a global location, say beside python or /usr/local/bin if possible
+                    python_dir = os.path.dirname(sys.executable)
+                    # For simplicity, try python dir
+                    for root, dirs, files in os.walk(temp_dir):
+                        for file in files:
+                            if file == "ffmpeg":
+                                dest = os.path.join(python_dir, file)
+                                if not os.path.exists(dest):
+                                    shutil.move(os.path.join(root, file), dest)
+                                    print(f"   Instalado: {dest}")
+                                    os.chmod(dest, 0o755)
+                                break
+                        else:
+                            continue
+                        break
+                    # Update global
+                    FFMPEG_PATH = shutil.which("ffmpeg") or dest
+                    FFPROBE_PATH = shutil.which("ffprobe") or dest.replace("ffmpeg", "ffprobe") if dest else None
+                    ok, ver = check_ffmpeg()
+                    if ok:
+                        print(f"   ffmpeg instalado correctamente: {ver}")
+                    else:
+                        raise Exception("Instalación falló")
+            except Exception as e:
+                print(f"   Error instalando ffmpeg: {e}")
+                print("   Por favor instala ffmpeg manualmente.")
+                sys.exit(1)
 
     print("2. Verificando tkinter...")
     if TK_AVAILABLE:
@@ -626,7 +659,6 @@ def ensure_dependencies():
         except subprocess.CalledProcessError as e:
             print(f"   Error instalando tkinter: {e}")
             print("   tkinter es parte de Python estándar. Asegúrate de tener Python con tcl/tk.")
-
 
     print("Verificación completada.")
 
